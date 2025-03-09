@@ -1,0 +1,124 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOAP Note App</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+    <h1>SOAP Note AI Assistant!</h1>
+
+    <h3>Physician-Patient Conversation</h3>
+    <button id="start-recording">Start Recording</button>
+    <button id="stop-recording" disabled>Stop Recording</button>
+
+    <h4>Transcribed Conversation:</h4>
+    <div id="transcription"></div>
+
+    <h4>Generate Insights:</h4>
+    <form id="conversation-form">
+        {% csrf_token %}
+        <textarea id="conversation" name="conversation" placeholder="Enter the conversation here..." rows="6" cols="60"></textarea><br>
+        <button type="submit">Generate Insight</button>
+    </form>
+
+    <h4>Generated Insight:</h4>
+    <div id="insight"></div>
+
+    <script>
+        const startRecordingButton = document.getElementById("start-recording");
+        const stopRecordingButton = document.getElementById("stop-recording");
+        const transcriptionParagraph = document.getElementById("transcription");
+        const conversationForm = document.getElementById("conversation-form");
+        const conversationTextArea = document.getElementById("conversation");
+        const insightDiv = document.getElementById("insight");
+    
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+    
+        startRecordingButton.addEventListener("click", () => {
+            recognition.start();
+            startRecordingButton.disabled = true;
+            stopRecordingButton.disabled = false;
+        });
+    
+        stopRecordingButton.addEventListener("click", () => {
+            recognition.stop();
+            startRecordingButton.disabled = false;
+            stopRecordingButton.disabled = true;
+        });
+    
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            transcriptionParagraph.textContent = transcript;
+            conversationTextArea.value = transcript;
+        };
+    
+        recognition.onerror = (event) => {
+            console.error("Error occurred in recognition: ", event.error);
+            transcriptionParagraph.textContent = "Error occurred during transcription.";
+        };
+    
+        // Get the CSRF token from cookies
+        function getCSRFToken() {
+            const cookieValue = document.cookie.match(/csrftoken=([^;]+)/);
+            return cookieValue ? cookieValue[1] : '';
+        }
+    
+        function convertMarkdownToHTML(markdownText) {
+            let htmlText = markdownText;
+    
+            // Convert bold syntax (Markdown **bold** to <strong>)
+            htmlText = htmlText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+            // Convert bullet points (Markdown * item to <ul><li>)
+            htmlText = htmlText.replace(/\* (.*?)(?=\n|\r)/g, '<ul><li>$1</li></ul>');
+    
+            // Convert line breaks (Markdown newlines to <br> for line breaks)
+            htmlText = htmlText.replace(/\n/g, '<br>');
+    
+            return htmlText;
+        }
+    
+        // Handle form submission
+        conversationForm.addEventListener("submit", async (event) => {
+            event.preventDefault();  // Prevent default form submission
+    
+            const conversationText = conversationTextArea.value;
+            const csrfToken = getCSRFToken();  // Get CSRF token
+    
+            if (conversationText) {
+                try {
+                    const response = await fetch('/process_conversation/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                            'X-CSRFToken': csrfToken  // Add CSRF token to the request header
+                        },
+                        body: `conversation=${encodeURIComponent(conversationText)}`
+                    });
+    
+                    const data = await response.json();
+                    if (data.status === 'success') {
+                        // Convert the markdown to HTML before displaying
+                        const formattedText = convertMarkdownToHTML(data.recommendation);
+                        insightDiv.innerHTML = formattedText;  // Set innerHTML to formatted response
+                    } else {
+                        insightDiv.textContent = `Error generating insight: ${data.message}`;
+                    }
+                } catch (error) {
+                    insightDiv.textContent = "An error occurred while processing the request.";
+                    console.error('Error:', error);
+                }
+            }
+        });
+    </script>
+    
+</body>
+</html>
